@@ -2,22 +2,34 @@ stages:
   - build
   - test
   - deploy
+  - tag
 
 variables:
-  IMAGE_TAG: latest
   IMAGE_NAME: booking-service
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA" # тег образа по коммиту, если держать одинаковый тег, helm upgrade не увидит изменения
+  DEPLOY_ENV: staging
 
 build:
   stage: build
   script:
-
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG booking-service
 
 test:
   stage: test
   script:
-
+    - docker run -d --name booking-service-test -p 10000:8080 $IMAGE_NAME:$IMAGE_TAG
+    - sleep 2
+    - curl -sf http://localhost:10000/ping | grep pong
+  after_script:
+    - docker rm -f booking-service-test
 
 deploy:
   stage: deploy
   script:
- 
+    - minikube image load $IMAGE_NAME:$IMAGE_TAG
+    - helm upgrade --install $IMAGE_NAME helm/booking-service -f helm/booking-service/values-$DEPLOY_ENV.yaml --set image.tag=$IMAGE_TAG --wait --timeout 2m
+
+tag:
+  stage: tag
+  script:
+    - git tag "deploy-$DEPLOY_ENV-$(date +%Y%m%d-%H%M%S)"
