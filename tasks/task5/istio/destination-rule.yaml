@@ -1,0 +1,30 @@
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: booking-service
+spec:
+  host: booking-service
+  
+  # сабсеты (версии)
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+  
+  trafficPolicy:
+    # приоритетно v1, если не доступны поды, то v2
+    loadBalancer:
+      localityLbSetting:
+        enabled: true
+        failoverPriority:
+          - "version=v1"
+
+    # circuit breaker (под с 3 ошибками 5xx подряд исключается на 30 секунд)
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50

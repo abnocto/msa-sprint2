@@ -1,0 +1,20 @@
+image:
+  name: booking-service
+  tag: latest
+
+# liveness
+livenessProbe:
+  httpGet:
+    path: /ping
+    port: 8080
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  failureThreshold: 3
+
+# readiness
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  periodSeconds: 5
+  failureThreshold: 2

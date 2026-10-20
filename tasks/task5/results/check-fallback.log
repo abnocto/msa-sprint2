@@ -1,0 +1,9 @@
+▶️ Testing fallback route...
+deployment.apps/booking-service-v1 scaled
+pod/booking-service-v1-74b459f6dc-5gzdr condition met
+pod/booking-service-v1-74b459f6dc-wtwk5 condition met
+  20 pong v2 [200]
+deployment.apps/booking-service-v1 scaled
+Waiting for deployment "booking-service-v1" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "booking-service-v1" rollout to finish: 1 of 2 updated replicas are available...
+deployment "booking-service-v1" successfully rolled out
