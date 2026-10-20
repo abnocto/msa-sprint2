@@ -52,8 +52,85 @@ services:
     networks:
       - hotelio-net
 
+  # Создает топик и завершается: сервисы стартуют, когда топик уже есть
+  kafka-init:
+    image: confluentinc/cp-kafka:7.2.1
+    command: >
+      bash -c "until kafka-topics --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 1; done;
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic booking-created --partitions 1 --replication-factor 1"
+    networks:
+      - hotelio-net
+    depends_on:
+      - kafka
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: booking-service/Dockerfile
+    container_name: booking-service
+    restart: on-failure
+    ports:
+      - "9090:9090"
+    networks:
+      - hotelio-net
+    environment:
+      DATABASE_URL: postgres://booking:booking@booking-db:5432/booking
+      KAFKA_BROKERS: kafka:9092
+      MONOLITH_URL: http://monolith:8080
+    depends_on:
+      booking-db:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+
+  booking-db:
+    image: postgres:15
+    container_name: booking-db
+    environment:
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+      POSTGRES_DB: booking
+    ports:
+      - "5433:5432"
+    volumes:
+      - booking-db-data:/var/lib/postgresql/data
+    networks:
+      - hotelio-net
+
+  booking-history-service:
+    build:
+      context: booking-history-service
+    container_name: booking-history-service
+    restart: on-failure
+    networks:
+      - hotelio-net
+    environment:
+      DATABASE_URL: postgres://history:history@booking-history-db:5432/history
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      booking-history-db:
+        condition: service_started
+      kafka-init:
+        condition: service_completed_successfully
+
+  booking-history-db:
+    image: postgres:15
+    container_name: booking-history-db
+    environment:
+      POSTGRES_USER: history
+      POSTGRES_PASSWORD: history
+      POSTGRES_DB: history
+    ports:
+      - "5434:5432"
+    volumes:
+      - booking-history-db-data:/var/lib/postgresql/data
+    networks:
+      - hotelio-net
+
 volumes:
   monolith-db-data:
+  booking-db-data:
+  booking-history-db-data:
 
 networks:
   hotelio-net:
