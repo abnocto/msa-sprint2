@@ -1,0 +1,17 @@
+$ docker image ls
+REPOSITORY                        TAG               IMAGE ID       CREATED          SIZE
+booking-service                   7f244f91          040b4957fa14   35 minutes ago   254MB
+
+$ minikube image list
+registry.k8s.io/pause:3.10.2
+registry.k8s.io/kube-scheduler:v1.37.0
+registry.k8s.io/kube-proxy:v1.37.0
+registry.k8s.io/kube-controller-manager:v1.37.0
+registry.k8s.io/kube-apiserver:v1.37.0
+registry.k8s.io/etcd:3.7.0-0
+registry.k8s.io/coredns/coredns:v1.14.6
+gcr.io/k8s-minikube/storage-provisioner:v5
+docker.io/library/busybox:latest
+docker.io/library/booking-service:7f244f91
+docker.io/kindest/kindnetd:v20260820-69b56db7
+docker.io/kindest/kindnetd:v20250512-df8de77b

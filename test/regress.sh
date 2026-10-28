@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "🏁 Регрессионный тест до миграции Hotelio"
+echo "🏁 Регрессионный тест Hotelio после выноса booking-service"
 
 # Проверка соединения
 echo "🧪 Проверка подключения к БД..."
@@ -11,6 +11,26 @@ timeout 2 bash -c "</dev/tcp/${DB_HOST}/${DB_PORT}" \
 # Загрузка фикстур
 echo "🧪 Загрузка фикстур..."
 PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" "${DB_NAME}" < init-fixtures.sql
+
+# БД booking-service и booking-history-service (по умолчанию на том же хосте)
+booking_db() { PGPASSWORD="${BOOKING_DB_PASSWORD:-booking}" psql -h "${BOOKING_DB_HOST:-$DB_HOST}" -p "${BOOKING_DB_PORT:-5433}" -U "${BOOKING_DB_USER:-booking}" -q "${BOOKING_DB_NAME:-booking}" "$@"; }
+history_db() { PGPASSWORD="${HISTORY_DB_PASSWORD:-history}" psql -h "${HISTORY_DB_HOST:-$DB_HOST}" -p "${HISTORY_DB_PORT:-5434}" -U "${HISTORY_DB_USER:-history}" -q "${HISTORY_DB_NAME:-history}" "$@"; }
+
+echo "🧪 Очистка тестовых броней в booking-service и истории..."
+booking_db -c "DELETE FROM booking WHERE user_id LIKE 'test-%'"
+history_db -c "DELETE FROM booking_history WHERE user_id LIKE 'test-%'"
+
+# Перенос старых броней из монолита в booking-service с исходными ID.
+# Идемпотентно (ON CONFLICT DO NOTHING): запускается до и после переключения монолита на gRPC.
+echo "🧪 Перенос броней из монолита в booking-service..."
+{
+  echo "CREATE TEMP TABLE booking_import (LIKE booking);"
+  echo "COPY booking_import (id, user_id, hotel_id, promo_code, discount_percent, price, created_at) FROM STDIN;"
+  PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" "${DB_NAME}" \
+    -c "\copy (SELECT id, user_id, hotel_id, promo_code, discount_percent, price, COALESCE(created_at, NOW()) FROM booking) TO STDOUT"
+  echo "\\."
+  echo "INSERT INTO booking SELECT * FROM booking_import ON CONFLICT (id) DO NOTHING;"
+} | booking_db
 
 echo "🧪 Выполнение HTTP-тестов..."
 
@@ -100,17 +120,21 @@ curl -sSf -X POST "${BASE}/api/promos/validate?code=TESTCODE1&userId=test-user-2
 echo ""
 echo "Тесты бронирования..."
 
-# 1. Получение всех бронирований
-curl -sSf "${BASE}/api/bookings" | grep -q 'test-user-2' && pass "Все бронирования получены" || fail "Бронирования не получены"
+# 1. Все бронирования без userId больше не отдаются (в gRPC-контракте только список по пользователю)
+curl -s -o /dev/null -w "%{http_code}" "${BASE}/api/bookings" | grep -q '500' \
+  && pass "Отклонено: список всех бронирований без userId" \
+  || fail "Ошибка: сервер отдал бронирования без userId"
 
-# 2. Получение бронирований пользователя
+# 2. Получение бронирований пользователя (перенесены из монолита)
 curl -sSf "${BASE}/api/bookings?userId=test-user-2" | grep -q 'test-user-2' && pass "Бронирования test-user-2 найдены" || fail "Нет бронирований test-user-2"
 
 # 3. Успешное бронирование отеля без промо
 curl -sSf -X POST "${BASE}/api/bookings?userId=test-user-3&hotelId=test-hotel-1" | grep -q 'test-hotel-1' && pass "Бронирование прошло (без промо)" || fail "Бронирование (без промо) не прошло"
 
 # 4. Успешное бронирование с промо
-curl -sSf -X POST "${BASE}/api/bookings?userId=test-user-2&hotelId=test-hotel-1&promoCode=TESTCODE1" | grep -q 'TESTCODE1' && pass "Бронирование с промо прошло" || fail "Бронирование с промо не прошло"
+booking=$(curl -sSf -X POST "${BASE}/api/bookings?userId=test-user-2&hotelId=test-hotel-1&promoCode=TESTCODE1")
+echo "$booking" | grep -q 'TESTCODE1' && pass "Бронирование с промо прошло" || fail "Бронирование с промо не прошло"
+booking_id=$(echo "$booking" | grep -o '"id":[0-9]*' | cut -d: -f2)
 
 # 5. Ошибка — неактивный пользователь
 code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE}/api/bookings?userId=test-user-0&hotelId=test-hotel-1")
@@ -129,4 +153,20 @@ curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE}/api/bookings?userId=test
 curl -s -o /dev/null -w "%{http_code}" -X POST "${BASE}/api/bookings?userId=test-user-2&hotelId=test-hotel-2" | grep -q '500' \
   && pass "Отклонено: отель полностью забронирован" \
   || fail "Ошибка: сервер принял бронирование в полностью занятом отеле"
+
+echo ""
+echo "Тесты booking-service и истории..."
+
+# 8. Бронь сохранена в БД booking-service
+booking_db -tAc "SELECT id FROM booking WHERE id = ${booking_id}" | grep -q "${booking_id}" \
+  && pass "Бронь ${booking_id} в БД booking-service" || fail "Брони ${booking_id} нет в БД booking-service"
+
+# 9. Бронь дошла через Kafka до booking-history-service (асинхронно, ждем до 10 секунд)
+for _ in $(seq 1 10); do
+  history_db -tAc "SELECT booking_id FROM booking_history WHERE booking_id = ${booking_id}" | grep -q "${booking_id}" && break
+  sleep 1
+done
+history_db -tAc "SELECT booking_id FROM booking_history WHERE booking_id = ${booking_id}" | grep -q "${booking_id}" \
+  && pass "Бронь ${booking_id} в истории бронирований" || fail "Брони ${booking_id} нет в истории бронирований"
+
 echo "✅ Все HTTP-тесты пройдены!"

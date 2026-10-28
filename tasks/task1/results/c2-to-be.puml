@@ -1,0 +1,36 @@
+@startuml c2-to-be
+
+!include <C4/C4_Container>
+
+title Hotelio: C2 (через несколько месяцев)
+
+Person(user, "Пользователь")
+
+System_Boundary(hotelio, "Hotelio") {
+  Container(bff, "BFF", "", "Роутинг запросов")
+
+  Container_Boundary(docker, "Docker") {
+    Container(monolith, "Монолит", "Java, Spring Boot", "Пользователи, отели, отзывы, промокоды")
+    ContainerDb(monolith_db, "БД монолита", "PostgreSQL")
+  }
+
+  Container_Boundary(k8s, "Kubernetes") {
+    Container(booking, "Сервис бронирования", "Java, Spring Boot")
+    ContainerDb(booking_db, "БД бронирования", "PostgreSQL", "Брони, outbox")
+  }
+
+  ContainerQueue(kafka, "Kafka", "", "События броней")
+  Container(monitoring, "Мониторинг", "Prometheus, Grafana")
+}
+
+Rel_D(user, bff, "", "REST")
+Rel_D(bff, monolith, "Остальные запросы", "REST")
+Rel_D(bff, booking, "Бронирования", "REST")
+Rel_L(booking, monolith, "Данные для проверок", "REST, ACL")
+Rel_D(booking, booking_db, "")
+Rel_D(monolith, monolith_db, "")
+Rel_D(booking, kafka, "Бронь создана")
+Rel_L(kafka, monolith, "Копия броней (на время миграции)")
+Rel_U(monitoring, booking, "Метрики")
+
+@enduml

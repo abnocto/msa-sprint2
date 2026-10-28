@@ -1,0 +1,39 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: booking-service
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - booking-gateway
+  
+  http:
+    # фича-флаг по заголовку от EnvoyFilter
+    - match:
+        - headers:
+            x-version:
+              exact: v2
+      route:
+        - destination:
+            host: booking-service
+            subset: v2
+
+    # canary 90/10
+    - route:
+        # по дефолту 90 процентов трафика пойдет на v1, т.к. в DestinationRule задан failoverPriority для v1
+        # subset специально не указывается, чтобы при отказе всех v1 подов был фолбэк на v2
+        - destination:
+            host: booking-service
+          weight: 90
+
+        - destination:
+            host: booking-service
+            subset: v2
+          weight: 10
+
+      # ретраи
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: 5xx,reset,connect-failure,refused-stream

@@ -1,0 +1,4 @@
+booking-subgraph-1  | bookingsByUser: userId=test-user-2, header userid=test-user-2
+booking-subgraph-1  | bookingsByUser: 2 bookings from booking-service
+booking-subgraph-1  | bookingsByUser: userId=test-user-2, header userid=test-user-3
+booking-subgraph-1  | bookingsByUser denied: FORBIDDEN

@@ -1,0 +1,32 @@
+# booking-history-service: история бронирований (БД booking-history-db) после выполнения тестов
+
+## select * from booking_history
+
+     booking_id     |   user_id   |   hotel_id   | promo_code | discount_percent | price |         created_at         
+--------------------+-------------+--------------+------------+------------------+-------+----------------------------
+ 105727574772027392 | test-user-3 | test-hotel-1 |            |                0 |    80 | 2026-10-17 18:03:38.149+00
+ 105727574923022337 | test-user-2 | test-hotel-1 | TESTCODE1  |               10 |    90 | 2026-10-17 18:03:38.185+00
+(2 rows)
+
+## Статистика по пользователям
+
+   user_id   | bookings | revenue 
+-------------+----------+---------
+ test-user-2 |        1 |      90
+ test-user-3 |        1 |      80
+(2 rows)
+
+## Статистика по отелям
+
+   hotel_id   | bookings | revenue 
+--------------+----------+---------
+ test-hotel-1 |        2 |     170
+(1 row)
+
+## Статистика по дням
+
+    day     | bookings | revenue 
+------------+----------+---------
+ 2026-10-17 |        2 |     170
+(1 row)
+
